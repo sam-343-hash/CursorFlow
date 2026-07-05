@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>AI Cursor - Voice Command</title>
+<style>
+  body {
+    margin: 0;
+    font-family: -apple-system, Arial, sans-serif;
+    background: #16161a;
+    color: white;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+    box-sizing: border-box;
+  }
+  #micBtn {
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    border: none;
+    background: #4a90e2;
+    color: white;
+    font-size: 34px;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.2s ease;
+  }
+  #micBtn.listening {
+    background: #ff3b3b;
+    transform: scale(1.1);
+    animation: pulse 1.2s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(255,59,59,0.5); }
+    70% { box-shadow: 0 0 0 18px rgba(255,59,59,0); }
+    100% { box-shadow: 0 0 0 0 rgba(255,59,59,0); }
+  }
+  #transcript { margin-top: 20px; font-size: 16px; min-height: 24px; max-width: 320px; }
+  #status { margin-top: 10px; font-size: 13px; color: #aaa; max-width: 320px; line-height: 1.5; }
+  #hint { font-size: 12px; color: #777; margin-top: 24px; }
+</style>
+</head>
+<body>
+
+<button id="micBtn">🎤</button>
+<div id="transcript">Click the mic and speak your goal</div>
+<div id="status"></div>
+<div id="hint">e.g. "change my profile picture"</div>
+
+<script src="voice.js"></script>
+</body>
+</html>
