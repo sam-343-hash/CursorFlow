@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cursor Design Preview</title>
+<link rel="stylesheet" href="../src/ui/overlay/overlay.css">
+<style>
+  body {
+    font-family: -apple-system, Arial, sans-serif;
+    background: #f4f4f6;
+    margin: 0;
+    padding: 60px 40px;
+    min-height: 1400px;
+  }
+  h1 { font-size: 20px; }
+  p.instructions { color: #555; max-width: 500px; line-height: 1.6; }
+  .demo-row {
+    display: flex;
+    gap: 16px;
+    margin: 40px 0;
+    flex-wrap: wrap;
+  }
+  .fake-btn {
+    padding: 12px 22px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    background: white;
+    font-size: 14px;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .spacer { height: 500px; }
+  .sensitive-btn { border-color: #e2a34a; }
+</style>
+</head>
+<body>
+
+<h1>Cursor Design Preview (real overlay.js / overlay.css, not a mockup)</h1>
+<p class="instructions">
+  Move your real mouse around the page first (so there's a "last known position" to glide from),
+  then click any button below. Watch the red cursor glide from wherever your mouse last was to the button,
+  with the glass-morphism label bubble. The amber button simulates a "sensitive action" (like the real extension
+  would show for something like a delete/payment button - point only, no click).
+</p>
+
+<div class="demo-row">
+  <button class="fake-btn" id="btn1">Change profile picture</button>
+  <button class="fake-btn" id="btn2">Open settings</button>
+  <button class="fake-btn sensitive-btn" id="btn3">Delete account (sensitive demo)</button>
+</div>
+
+<div class="spacer"></div>
+
+<div class="demo-row">
+  <button class="fake-btn" id="btn4">Scroll-to-me button (tests scrollIntoView + glide together)</button>
+</div>
+
+<script src="../src/ui/overlay/overlay.js"></script>
+<script>
+  document.getElementById('btn1').addEventListener('click', (e) => {
+    AICursor.Overlay.pointAt(e.target, 'Change profile picture', false);
+  });
+  document.getElementById('btn2').addEventListener('click', (e) => {
+    AICursor.Overlay.pointAt(e.target, 'Open settings', false);
+  });
+  document.getElementById('btn3').addEventListener('click', (e) => {
+    AICursor.Overlay.pointAt(e.target, 'Delete account', true);
+  });
+  document.getElementById('btn4').addEventListener('click', (e) => {
+    AICursor.Overlay.pointAt(e.target, 'Scroll-to-me button', false);
+  });
+</script>
+</body>
+</html>
