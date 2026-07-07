@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Module 1 Verification — utils + security</title>
+<style>
+  body { font-family: -apple-system, Arial, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; background: #0f0f10; color: #eee; }
+  h1 { font-size: 20px; }
+  .test { border: 1px solid #333; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .test h2 { margin: 0 0 8px 0; font-size: 14px; color: #9cf; }
+  .pass { color: #4ade80; }
+  .fail { color: #ff6b6b; }
+  pre { background: #1a1a1c; padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+  #summary { font-size: 16px; margin-top: 20px; padding: 12px; border-radius: 8px; }
+</style>
+</head>
+<body>
+<h1>Module 1 Verification: src/utils + src/security</h1>
+<p>This page loads the actual module files (no mocking) and runs real checks against them. Open your browser's console too — the logger writes there.</p>
+
+<div id="results"></div>
+<div id="summary"></div>
+
+<!-- Loading order matters: logger and storage first (security modules depend on them) -->
+<script src="../src/utils/logger.js"></script>
+<script src="../src/utils/storage.js"></script>
+<script src="../src/security/permissions.js"></script>
+<script src="../src/security/sensitiveActionGuard.js"></script>
+<script src="../src/security/inputValidation.js"></script>
+
+<script>
+// This page runs outside a real extension context (no chrome.storage),
+// so we stub chrome.storage.local minimally just for this verification
+// page to prove the MODULE LOGIC works. Inside the real extension,
+// chrome.storage.local is provided natively by the browser.
+if (typeof chrome === 'undefined') window.chrome = {};
+if (!chrome.runtime) chrome.runtime = { id: 'test-extension-id', getManifest: () => ({}), lastError: null };
+if (!chrome.storage) {
+  const fakeStore = {};
+  chrome.storage = {
+    local: {
+      get(keys, cb) {
+        const result = {};
+        if (keys === null) Object.assign(result, fakeStore);
+        else (Array.isArray(keys) ? keys : [keys]).forEach(k => { if (k in fakeStore) result[k] = fakeStore[k]; });
+        cb(result);
+      },
+      set(obj, cb) { Object.assign(fakeStore, obj); cb && cb(); },
+      remove(keys, cb) { (Array.isArray(keys) ? keys : [keys]).forEach(k => delete fakeStore[k]); cb && cb(); },
+    },
+  };
+}
+
+const resultsEl = document.getElementById('results');
+const summaryEl = document.getElementById('summary');
+let passCount = 0, failCount = 0;
+
+function renderTest(name, passed, details) {
+  if (passed) passCount++; else failCount++;
+  const div = document.createElement('div');
+  div.className = 'test';
+  div.innerHTML = `<h2>${passed ? '<span class="pass">PASS</span>' : '<span class="fail">FAIL</span>'} — ${name}</h2><pre>${details}</pre>`;
+  resultsEl.appendChild(div);
+}
+
+async function runAllTests() {
+  // --- Logger ---
+  const logger = AICursor.Logger.create('verification-page');
+  logger.info('Logger created successfully');
+  logger.time('demo-timer');
+  await new Promise(r => setTimeout(r, 50));
+  const elapsed = logger.timeEnd('demo-timer');
+  renderTest(
+    'Logger: create/info/time/timeEnd',
+    typeof elapsed === 'number' && elapsed >= 40,
+    `Logger.create() returned a working logger.\ntimeEnd() measured ~${elapsed}ms (expected close to 50ms).\nCheck your browser console for the actual log lines.`
+  );
+
+  const bufferBefore = AICursor.Logger.getBuffer().length;
+  logger.warn('A warning to test the ring buffer');
+  const bufferAfter = AICursor.Logger.getBuffer().length;
+  renderTest(
+    'Logger: ring buffer captures entries',
+    bufferAfter === bufferBefore + 1,
+    `Buffer size went from ${bufferBefore} to ${bufferAfter} after one warn() call.`
+  );
+
+  // --- Storage ---
+  await AICursor.Storage.set({ 'test:key': 'hello' });
+  const readBack = await AICursor.Storage.get(['test:key']);
+  renderTest(
+    'Storage: set then get round-trip',
+    readBack['test:key'] === 'hello',
+    `Wrote {"test:key":"hello"}, read back: ${JSON.stringify(readBack)}`
+  );
+
+  await AICursor.Storage.remove(['test:key']);
+  const afterRemove = await AICursor.Storage.get(['test:key']);
+  renderTest(
+    'Storage: remove works',
+    afterRemove['test:key'] === undefined,
+    `After remove(), key is: ${JSON.stringify(afterRemove)}`
+  );
+
+  // --- PermissionStore ---
+  const origin = 'https://example.com';
+  const beforeGrant = await AICursor.PermissionStore.check(origin);
+  await AICursor.PermissionStore.grant(origin);
+  const afterGrant = await AICursor.PermissionStore.check(origin);
+  await AICursor.PermissionStore.deny(origin);
+  const afterDeny = await AICursor.PermissionStore.check(origin);
+  await AICursor.PermissionStore.revoke(origin);
+  const afterRevoke = await AICursor.PermissionStore.check(origin);
+  renderTest(
+    'PermissionStore: grant / deny / revoke lifecycle',
+    beforeGrant === undefined && afterGrant === true && afterDeny === false && afterRevoke === undefined,
+    `Before: ${beforeGrant}\nAfter grant(): ${afterGrant}\nAfter deny(): ${afterDeny}\nAfter revoke(): ${afterRevoke}\n(Expected: undefined, true, false, undefined)`
+  );
+
+  const grantedA = 'https://a.com';
+  const grantedB = 'https://b.com';
+  await AICursor.PermissionStore.grant(grantedA);
+  await AICursor.PermissionStore.grant(grantedB);
+  await AICursor.PermissionStore.deny('https://c.com');
+  const originList = await AICursor.PermissionStore.listGrantedOrigins();
+  renderTest(
+    'PermissionStore: listGrantedOrigins returns only granted origins',
+    originList.includes(grantedA) && originList.includes(grantedB) && !originList.includes('https://c.com'),
+    `listGrantedOrigins() -> ${JSON.stringify(originList)}\n(Expected to include a.com and b.com, NOT c.com since it was denied)`
+  );
+
+  // --- SensitiveActionGuard ---
+  const guardTests = [
+    { label: 'Delete my account', expectSensitive: true, expectCategory: 'destructive' },
+    { label: 'Buy now', expectSensitive: true, expectCategory: 'financial' },
+    { label: 'Log Out', expectSensitive: true, expectCategory: 'account' },
+    { label: 'English', expectSensitive: false, expectCategory: null },
+    { label: 'Search', expectSensitive: false, expectCategory: null },
+  ];
+  let guardAllPassed = true;
+  const guardDetails = [];
+  for (const t of guardTests) {
+    const actualSensitive = AICursor.SensitiveActionGuard.isSensitive(t.label);
+    const actualCategory = AICursor.SensitiveActionGuard.classify(t.label);
+    const ok = actualSensitive === t.expectSensitive && actualCategory === t.expectCategory;
+    if (!ok) guardAllPassed = false;
+    guardDetails.push(`"${t.label}" -> sensitive=${actualSensitive}, category=${actualCategory} ${ok ? 'OK' : 'MISMATCH expected ' + t.expectCategory}`);
+  }
+  renderTest('SensitiveActionGuard: classification accuracy', guardAllPassed, guardDetails.join('\n'));
+
+  // --- InputValidation ---
+  const validationTests = [
+    { msg: { type: 'RUN_GOAL', goal: 'change my picture' }, expectValid: true },
+    { msg: { type: 'RUN_GOAL', goal: '' }, expectValid: false },
+    { msg: { type: 'RUN_GOAL', goal: 42 }, expectValid: false },
+    { msg: { type: 'NOT_A_REAL_TYPE' }, expectValid: false },
+    { msg: { type: 'STOP_GOAL' }, expectValid: true },
+    { msg: null, expectValid: false },
+  ];
+  let validationAllPassed = true;
+  const validationDetails = [];
+  for (const t of validationTests) {
+    const result = AICursor.InputValidation.validateMessage(t.msg);
+    const ok = result.valid === t.expectValid;
+    if (!ok) validationAllPassed = false;
+    validationDetails.push(`${JSON.stringify(t.msg)} -> valid=${result.valid}${result.reason ? ' (' + result.reason + ')' : ''} ${ok ? 'OK' : 'MISMATCH'}`);
+  }
+  renderTest('InputValidation: message schema checks', validationAllPassed, validationDetails.join('\n'));
+
+  const senderTrusted = AICursor.InputValidation.isSenderTrusted({ id: 'test-extension-id' });
+  const senderUntrusted = AICursor.InputValidation.isSenderTrusted({ id: 'some-other-extension' });
+  renderTest(
+    'InputValidation: sender trust check',
+    senderTrusted === true && senderUntrusted === false,
+    `Own extension id -> trusted=${senderTrusted}\nForeign id -> trusted=${senderUntrusted}`
+  );
+
+  // --- Summary ---
+  summaryEl.textContent = `${passCount} passed, ${failCount} failed`;
+  summaryEl.style.background = failCount === 0 ? '#14321f' : '#3a1414';
+  summaryEl.style.color = failCount === 0 ? '#4ade80' : '#ff6b6b';
+}
+
+runAllTests();
+</script>
+</body>
+</html>
